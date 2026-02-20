@@ -42,7 +42,14 @@ class _AttendanceFormScreenState extends State<AttendanceFormScreen> {
 
   Future<void> _loadSitesAndLocation() async {
     try {
-      await _ensureLocationPermission();
+      final ok = await _ensureLocationPermission();
+      if (!ok) {
+        _show('Location permission is required to auto‑select site.');
+      }
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _show('Please enable Location (GPS).');
+      }
       final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       final sites = await _firestore.fetchSites();
       setState(() {
@@ -51,18 +58,22 @@ class _AttendanceFormScreenState extends State<AttendanceFormScreen> {
         _selectedSite = _autoSelectSite(sites, pos);
       });
     } catch (e) {
-      // ignore, show manual selection
       setState(() {
         _sites = [];
       });
+      _show('Could not load location or sites. Please try again.');
     }
   }
 
-  Future<void> _ensureLocationPermission() async {
-    final perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-      await Geolocator.requestPermission();
+  Future<bool> _ensureLocationPermission() async {
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
     }
+    if (perm == LocationPermission.deniedForever) {
+      return false;
+    }
+    return perm == LocationPermission.always || perm == LocationPermission.whileInUse;
   }
 
   Site? _autoSelectSite(List<Site> sites, Position pos) {
@@ -192,6 +203,11 @@ class _AttendanceFormScreenState extends State<AttendanceFormScreen> {
               onChanged: (s) => setState(() => _selectedSite = s),
               decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Select Site'),
             ),
+            if (_sites.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 8.0),
+                child: Text('No sites loaded. Please check network or permissions.', style: TextStyle(color: Colors.red)),
+              ),
             const SizedBox(height: 12),
             const Text('Nearest site is auto‑selected. You can change it if needed.', style: TextStyle(color: Colors.black54)),
             const Divider(height: 28),
